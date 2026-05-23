@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls /Users/tony/programming/Hackathons/googleIO/)",
+      "Read(//Users/tony/programming/Hackathons/googleIO/**)",
+      "Bash(npm test *)"
+    ]
+  }
+}

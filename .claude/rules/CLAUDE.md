@@ -10,67 +10,133 @@ FIFA 360 is a **mobile-first AI matchday companion** for the 2026 World Cup. It 
 1. **Find** — Smart venue discovery (where to watch)
 2. **Get There** — Route planning + departure timing (how to arrive)
 3. **Follow** — Live second-screen match experience (what's happening)
+4. **Talk** — Live voice agent that calls the venue and books your spot
 
-It is positioned as a **"matchday operating system"** — not a single feature, but the connective tissue across the entire match day.
+Positioned as a **"matchday operating system"** — not a single feature, but the connective tissue across the entire match day.
 
 ---
 
 ## 🏗️ Architecture Overview
 
 ```
-[ Mobile Web App — React + Tailwind ]
-        |
-        ▼
-[ RocketRide Pipeline Orchestration Layer ]
-    /           |            \
-[GMI Cloud]  [Anthropic API]  [MapKit JS]
- Embeddings   Claude Sonnet    Routes
- Ranking      Haiku (realtime)
-        |
-[ Mock Match Data API (internal) ]
-[ Venue Data Store (JSON/mock) ]
-[ Fan Profile Store (localStorage) ]
+[ Mobile Web App — React + Tailwind (PWA) ]
+              |
+              ▼
+     [ Next.js API Routes ]
+       (thin passthrough)
+              |
+    ┌─────────┴──────────┐
+    ▼                    ▼
+[ RocketRide ]      [ Vapi.ai ]
+  Pipeline           Voice Agent
+  Orchestration      Orchestration
+    |                    |
+    ▼                    ▼
+[ GMI Cloud — NVIDIA H100/H200 ]
+  ALL inference runs here
+  ├── google/gemma-4-27b-it    (concierge, tactics, narratives, RSVP voice brain)
+  ├── google/gemma-4-e2b-it    (fast: key moments, departure briefs)
+  └── BAAI/bge-large-en-v1.5  (embeddings: venue ranking)
+              |
+    ┌─────────┴──────────┐
+    ▼                    ▼
+[ MapKit JS ]      [ Vapi Telephony ]
+  Routes             Twilio + Deepgram STT
+  Geocoding          + ElevenLabs TTS
 ```
+
+**The golden rule: ALL AI inference goes through GMI Cloud. RocketRide orchestrates pipelines. Vapi handles voice calls — powered by Gemma 4 on GMI as its brain.**
 
 ---
 
-## 🔑 Environment Variables (Shared .env)
+## 🔑 Environment Variables (.env.local)
 
 ```bash
-# Anthropic
-ANTHROPIC_API_KEY=           # shared team key
+# ─── GMI Cloud (ALL inference) ───────────────────────────────
+GMI_API_KEY=                          # from console.gmicloud.ai
+GMI_BASE_URL=https://api.gmi-serving.com/v1
 
-# GMI Cloud
-GMI_API_KEY=                 # provided at event
-GMI_BASE_URL=https://api.gmi-serving.com/v1   # OpenAI-compatible
+# ─── Model names on GMI ──────────────────────────────────────
+GMI_SMART_MODEL=google/gemma-4-27b-it
+GMI_FAST_MODEL=google/gemma-4-e2b-it
+GMI_EMBED_MODEL=BAAI/bge-large-en-v1.5
 
-# Google
-GOOGLE_AI_STUDIO_KEY=        # for PRD/testing only — NOT in live demo
-MAPKIT_JS_TOKEN=             # MapKit JWT token
-
-# RocketRide
+# ─── RocketRide ──────────────────────────────────────────────
 ROCKETRIDE_SERVER_URL=http://localhost:5565
 
-# App
-VITE_APP_ENV=development
+# ─── Vapi (Voice Agent) ──────────────────────────────────────
+VAPI_API_KEY=                         # from dashboard.vapi.ai
+VAPI_PHONE_NUMBER_ID=                 # provisioned Twilio number in Vapi
+VAPI_ASSISTANT_ID=                    # created once at setup, reused per call
+
+# ─── MapKit JS ───────────────────────────────────────────────
+MAPKIT_JS_TOKEN=
+
+# ─── App ─────────────────────────────────────────────────────
+NEXT_PUBLIC_APP_URL=http://localhost:3000
 NEXT_PUBLIC_WS_URL=ws://localhost:3001
 ```
 
-> ⚠️ **LIVE DEMO MODEL RULE**: All user-facing AI inference runs through Anthropic (Claude) or GMI Cloud. Gemini/Google AI Studio is for development reference only and must NOT appear in the demo flow.
+> ⚠️ **NO Anthropic key. NO OpenAI key. GMI Cloud IS the inference layer for everything.**
 
 ---
 
 ## 🤖 Model Routing Map
 
-| Feature | Model | Provider | Why |
-|---|---|---|---|
-| Venue Concierge Agent | `claude-sonnet-4-20250514` | Anthropic | Tool use, structured output, conversation |
-| Tactical Explainer | `claude-sonnet-4-20250514` | Anthropic | Multi-level explanation, reasoning |
-| Key Moment Summaries | `claude-haiku-4-5-20251001` | Anthropic | Speed — sub-500ms for live feel |
-| Departure Timing NL | `claude-haiku-4-5-20251001` | Anthropic | Fast, simple reasoning |
-| Venue Embeddings/Ranking | `BAAI/bge-large-en-v1.5` | GMI Cloud | Semantic similarity at scale |
-| Fan Profile Personalization | `claude-sonnet-4-20250514` | Anthropic | Nuanced preference modeling |
-| Match Narrative Generator | `claude-sonnet-4-20250514` | Anthropic | Story arc, rich language |
+| Feature | Model | Why |
+|---|---|---|
+| Venue Concierge Chat | `gemma-4-27b-it` via GMI | Strong reasoning, tool use, multi-turn |
+| Tactical Explainer | `gemma-4-27b-it` via GMI | 256K context, nuanced multi-level output |
+| Match Narrative | `gemma-4-27b-it` via GMI | Rich storytelling, World Cup context |
+| **Voice RSVP Agent** | **`gemma-4-27b-it` via GMI** | **Vapi custom LLM → GMI endpoint** |
+| Key Moment Descriptions | `gemma-4-e2b-it` via GMI | <500ms, live feel |
+| Departure Timing NL | `gemma-4-e2b-it` via GMI | Simple reasoning, fast |
+| Venue Embeddings/Ranking | `BAAI/bge-large-en-v1.5` via GMI | Semantic similarity, GPU-native |
+
+---
+
+## 🔌 Shared GMI Client (`src/lib/gmi.ts`)
+
+```typescript
+import OpenAI from 'openai';
+
+// GMI Cloud is OpenAI-compatible — one client for everything
+export const gmi = new OpenAI({
+  apiKey: process.env.GMI_API_KEY!,
+  baseURL: process.env.GMI_BASE_URL!, // https://api.gmi-serving.com/v1
+});
+
+export const SMART_MODEL  = process.env.GMI_SMART_MODEL!; // gemma-4-27b-it
+export const FAST_MODEL   = process.env.GMI_FAST_MODEL!;  // gemma-4-e2b-it
+export const EMBED_MODEL  = process.env.GMI_EMBED_MODEL!; // BAAI/bge-large-en-v1.5
+
+// Generic chat helper
+export async function chat(
+  model: string,
+  system: string,
+  user: string,
+  opts?: { temperature?: number; max_tokens?: number }
+) {
+  const res = await gmi.chat.completions.create({
+    model,
+    messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
+    temperature: opts?.temperature ?? 0.7,
+    max_tokens:  opts?.max_tokens  ?? 512,
+  });
+  return res.choices[0].message.content ?? '';
+}
+
+// Streaming helper (for concierge + voice passthrough)
+export async function chatStream(model: string, messages: OpenAI.ChatCompletionMessageParam[]) {
+  return gmi.chat.completions.create({ model, messages, stream: true });
+}
+
+// Embedding helper (for venue ranking)
+export async function embed(text: string) {
+  const res = await gmi.embeddings.create({ model: EMBED_MODEL, input: text });
+  return res.data[0].embedding;
+}
+```
 
 ---
 
@@ -78,64 +144,74 @@ NEXT_PUBLIC_WS_URL=ws://localhost:3001
 
 ```
 fifa360/
-├── CLAUDE.md                    ← YOU ARE HERE
+├── CLAUDE.md                        ← YOU ARE HERE
 ├── PRD.md
-├── .env
+├── .env.local
+├── public/
+│   ├── sw.js                        ← Service worker (Person B)
+│   └── icon-192.png
 ├── src/
 │   ├── app/
 │   │   ├── layout.tsx
-│   │   ├── page.tsx             ← Home / onboarding
-│   │   ├── venue/               ← PERSON A
+│   │   ├── page.tsx                 ← Home screen
+│   │   ├── venue/                   ← PERSON A
 │   │   │   ├── page.tsx
 │   │   │   ├── [id]/page.tsx
 │   │   │   └── components/
-│   │   ├── route/               ← PERSON B
+│   │   ├── route/                   ← PERSON B
 │   │   │   ├── page.tsx
 │   │   │   └── components/
-│   │   ├── live/                ← PERSON C
+│   │   ├── live/                    ← PERSON C
 │   │   │   ├── page.tsx
 │   │   │   └── components/
-│   │   └── profile/             ← PERSON D (partial)
+│   │   └── profile/                 ← PERSON D
 │   ├── api/
-│   │   ├── venue/route.ts       ← PERSON A owns
-│   │   ├── route-plan/route.ts  ← PERSON B owns
-│   │   ├── live/route.ts        ← PERSON C owns
-│   │   ├── concierge/route.ts   ← PERSON D owns
-│   │   └── profile/route.ts     ← PERSON D owns
+│   │   ├── venue/route.ts           ← Person A
+│   │   ├── route-plan/route.ts      ← Person B
+│   │   ├── route-plan/notify/route.ts ← Person B
+│   │   ├── live/route.ts            ← Person C
+│   │   ├── live/explain/route.ts    ← Person C
+│   │   ├── concierge/route.ts       ← Person D
+│   │   ├── voice/
+│   │   │   ├── call/route.ts        ← Person D (Vapi outbound trigger)
+│   │   │   ├── llm/route.ts         ← Person D (Vapi custom LLM webhook)
+│   │   │   └── rsvp/route.ts        ← Person D (RSVP confirmation write)
+│   │   └── profile/route.ts         ← Person D
 │   ├── lib/
-│   │   ├── anthropic.ts         ← shared Claude client
-│   │   ├── gmi.ts               ← shared GMI client
-│   │   ├── rocketride.ts        ← shared RR client
-│   │   ├── mock-data.ts         ← ALL mock data lives here
-│   │   └── types.ts             ← ALL shared types live here
+│   │   ├── gmi.ts                   ← shared GMI client (above)
+│   │   ├── rocketride.ts            ← shared RR client
+│   │   ├── mock-data.ts             ← ALL mock data
+│   │   └── types.ts                 ← ALL shared types
 │   ├── components/
-│   │   ├── ui/                  ← shared UI components
-│   │   ├── MatchCard.tsx
+│   │   ├── NavBar.tsx
 │   │   ├── VenueCard.tsx
-│   │   └── NavBar.tsx
+│   │   ├── MatchCard.tsx
+│   │   └── VoiceCallModal.tsx       ← Person D
 │   └── hooks/
-│       ├── useNotifications.ts  ← PERSON B owns
-│       └── useLiveMatch.ts      ← PERSON C owns
-├── pipelines/                   ← RocketRide .pipe files (PERSON D)
-│   ├── venue-ranking.pipe
-│   ├── concierge.pipe
-│   └── live-match.pipe
-└── public/
-    └── sw.js                    ← Service worker for push notifs
+│       ├── useNotifications.ts      ← Person B
+│       ├── useLiveMatch.ts          ← Person C
+│       └── useVoiceCall.ts          ← Person D
+├── pipelines/
+│   ├── venue-ranking.pipe           ← Person D
+│   ├── departure-timing.pipe        ← Person D
+│   ├── live-explain.pipe            ← Person D
+│   └── rsvp-confirm.pipe            ← Person D
+└── scripts/
+    └── setup-vapi-assistant.ts      ← Person D (run once at event start)
 ```
 
 ---
 
 ## 📦 Shared Types (`src/lib/types.ts`)
 
-> **Everyone imports from here. Do NOT define types locally.**
+> **Everyone imports from here. Never define types locally.**
 
 ```typescript
 export interface Match {
   id: string;
   homeTeam: Team;
   awayTeam: Team;
-  kickoffUTC: string;         // ISO 8601
+  kickoffUTC: string;
   venue: string;
   city: string;
   stage: 'group' | 'r16' | 'qf' | 'sf' | 'final';
@@ -146,7 +222,7 @@ export interface Match {
 export interface Team {
   id: string;
   name: string;
-  flag: string;               // emoji or URL
+  flag: string;
   primaryColor: string;
 }
 
@@ -156,32 +232,35 @@ export interface Venue {
   address: string;
   lat: number;
   lng: number;
+  phone: string;               // required — needed for voice calls
   type: 'bar' | 'restaurant' | 'fan_zone' | 'stadium_adjacent';
   capacity: 'intimate' | 'medium' | 'large';
   atmosphere: 'casual' | 'lively' | 'electric';
   amenities: string[];
   rating: number;
   priceRange: 1 | 2 | 3;
-  phone?: string;
   imageUrl?: string;
-  aiRankScore?: number;        // set by GMI ranking pipeline
-  aiRankReason?: string;       // set by Claude
+  aiRankScore?: number;
+  aiRankReason?: string;
+  rsvpAvailable: boolean;      // whether venue accepts RSVP via voice agent
 }
 
 export interface FanProfile {
   userId: string;
-  favoriteTeams: string[];     // team IDs
+  favoriteTeams: string[];
   watchStyle: 'social' | 'focused' | 'family';
   budgetRange: 1 | 2 | 3;
   maxTravelMinutes: number;
   notificationsEnabled: boolean;
-  departureAlertMinutes: number; // how early to alert before kickoff
+  departureAlertMinutes: number;
+  name?: string;               // used by voice agent to introduce the caller
+  partySize?: number;          // default party size for RSVP
 }
 
 export interface RoutePlan {
   venueId: string;
   matchId: string;
-  departureTime: string;       // ISO 8601
+  departureTime: string;
   arrivalTime: string;
   mode: 'walking' | 'transit' | 'driving';
   steps: RouteStep[];
@@ -201,8 +280,8 @@ export interface LiveMatchState {
   score: { home: number; away: number };
   possession: { home: number; away: number };
   keyEvents: MatchEvent[];
-  tacticalSummary?: string;    // Claude-generated
-  narrativeMoment?: string;    // Claude-generated
+  tacticalSummary?: string;
+  narrativeMoment?: string;
 }
 
 export interface MatchEvent {
@@ -211,7 +290,7 @@ export interface MatchEvent {
   type: 'goal' | 'yellow_card' | 'red_card' | 'substitution' | 'var' | 'kickoff' | 'halftime' | 'fulltime';
   team: string;
   player?: string;
-  description: string;         // Claude-generated plain English
+  description: string;
 }
 
 export interface ConciergeMessage {
@@ -219,78 +298,136 @@ export interface ConciergeMessage {
   content: string;
   timestamp: string;
 }
+
+// ─── Voice / RSVP ────────────────────────────────────────────
+
+export type CallStatus =
+  | 'idle'
+  | 'initiating'
+  | 'ringing'
+  | 'in-progress'
+  | 'completed'
+  | 'failed';
+
+export interface VoiceCallSession {
+  callId: string;              // Vapi call ID
+  venueId: string;
+  matchId: string;
+  fanProfile: FanProfile;
+  status: CallStatus;
+  transcript: TranscriptLine[];
+  rsvpResult?: RsvpResult;
+}
+
+export interface TranscriptLine {
+  role: 'agent' | 'venue';
+  text: string;
+  timestamp: string;
+}
+
+export interface RsvpResult {
+  confirmed: boolean;
+  partySize: number;
+  arrivalTime: string;         // what the venue agreed to
+  confirmationRef?: string;    // if venue gives a ref number
+  notes?: string;              // special instructions (cover charge, etc.)
+}
 ```
 
 ---
 
 ## 🔌 API Contracts
 
-> These endpoints must exist and return these shapes. Mock them first, replace with real logic.
+### Existing (unchanged)
+- `GET /api/venue?matchId=&lat=&lng=` → `Venue[]`
+- `POST /api/venue/rank` → `Venue[]` with scores
+- `POST /api/route-plan` → `RoutePlan`
+- `POST /api/route-plan/notify` → `{ scheduled: boolean }`
+- `GET /api/live?matchId=` → `LiveMatchState`
+- `POST /api/live/explain` → `{ explanation: string }`
+- `POST /api/concierge` → `{ reply: string }`
 
-### `GET /api/venue?matchId=&lat=&lng=&filters=`
-Returns: `Venue[]` sorted by `aiRankScore` desc
+### New — Voice Agent
+- `POST /api/voice/call` → `{ callId: string, status: CallStatus }`
+  - Body: `{ venueId, matchId, fanProfile }`
+  - Triggers Vapi outbound call to `venue.phone`
+  
+- `POST /api/voice/llm` → streaming SSE (OpenAI-compatible)
+  - **This is the Vapi custom LLM webhook** — Vapi sends conversation turns here
+  - Endpoint proxies to `gemma-4-27b-it` on GMI Cloud with RSVP system prompt
+  - Returns streaming chat completions back to Vapi
+  - Handles tool calls: `confirm_rsvp`, `get_venue_details`, `get_match_info`
 
-### `POST /api/venue/rank`
-Body: `{ venues: Venue[], profile: FanProfile, matchId: string }`
-Returns: `Venue[]` with `aiRankScore` and `aiRankReason` populated
-
-### `POST /api/route-plan`
-Body: `{ venueId: string, matchId: string, userLocation: {lat, lng}, mode: string }`
-Returns: `RoutePlan`
-
-### `POST /api/route-plan/notify`
-Body: `{ routePlan: RoutePlan, pushSubscription: PushSubscription }`
-Returns: `{ scheduled: boolean, notifyAt: string }`
-
-### `GET /api/live?matchId=`
-Returns: `LiveMatchState` (polling every 10s)
-
-### `POST /api/live/explain`
-Body: `{ event: MatchEvent, context: LiveMatchState }`
-Returns: `{ explanation: string, level: 'casual'|'enthusiast'|'analyst' }`
-
-### `POST /api/concierge`
-Body: `{ messages: ConciergeMessage[], profile: FanProfile, venueId?: string }`
-Returns: `{ reply: string, action?: 'call_venue'|'update_route'|'show_venue' }`
-
-### `GET /api/matches`
-Returns: `Match[]` — upcoming + live (mock data)
+- `POST /api/voice/rsvp` → `{ success: boolean }`
+  - Body: `RsvpResult & { venueId, matchId }`
+  - Called by voice agent tool when RSVP is confirmed; persists to localStorage via response
 
 ---
 
-## 🎭 Mock Data Location
+## 🗣️ Voice Agent Architecture
 
-All mock data lives in `src/lib/mock-data.ts`. Do not hardcode data in components.
+```
+User taps "Call & Book" in venue card
+          |
+          ▼
+POST /api/voice/call
+  → Vapi API: create outbound call
+      phoneNumberId: VAPI_PHONE_NUMBER_ID
+      customer: { number: venue.phone }
+      assistant: {
+        model: {
+          provider: "custom-llm",
+          url: "{APP_URL}/api/voice/llm",    ← our GMI proxy
+          model: "google/gemma-4-27b-it"
+        },
+        voice: { provider: "elevenlabs", voiceId: "rachel" },
+        transcriber: { provider: "deepgram", model: "nova-3" }
+      }
+          |
+          ▼ Vapi dials venue.phone
+          ▼ Venue picks up
+          ▼ Deepgram transcribes venue speech → text
+          ▼ POST to /api/voice/llm (our endpoint)
+          ▼ We proxy to GMI: gemma-4-27b-it with RSVP system prompt
+          ▼ Gemma responds (stream)
+          ▼ Vapi converts response → speech via ElevenLabs
+          ▼ Vapi speaks to venue
+          ▼ Loop until RSVP confirmed or call ended
+          ▼ On confirm_rsvp tool call → POST /api/voice/rsvp
+          ▼ User sees live transcript + confirmation in VoiceCallModal
+```
 
-```typescript
-export const MOCK_MATCHES: Match[] = [ /* 3-4 matches, 1 'live' */ ]
-export const MOCK_VENUES: Venue[] = [ /* 6-8 venues in SF/NYC */ ]
-export const DEMO_PROFILE: FanProfile = { /* Brazil fan, casual, mid budget */ }
+### Voice Agent System Prompt (in `/api/voice/llm`)
+```
+You are a friendly AI assistant calling on behalf of {fanName} to reserve a table
+to watch the {homeTeam} vs {awayTeam} match (kickoff {kickoffTime}) on the big screen.
+Party size: {partySize}. Requested arrival: {arrivalTime}.
+
+Your goals:
+1. Introduce yourself clearly as an AI assistant calling for {fanName}
+2. Ask if they have availability on the big screen for the match
+3. Negotiate party size and arrival time if needed
+4. Confirm the reservation and ask for any reference number or special instructions
+5. When confirmed, call the confirm_rsvp tool with the agreed details
+6. Thank them and end the call politely
+
+Be concise — you are on a live phone call. Keep turns short (1-3 sentences).
+If they can't accommodate, thank them and end the call gracefully.
 ```
 
 ---
 
 ## 🔔 Notification System
 
-Push notifications use the **Web Push API** via a service worker (`public/sw.js`).
-
-**Flow:**
-1. User enables notifications in profile setup
-2. Browser subscribes → subscription stored in localStorage
-3. When route plan is saved → `POST /api/route-plan/notify` schedules an alert
-4. Service worker fires notification at `kickoffTime - departureAlertMinutes`
-5. Notification payload: `{ title: "Time to leave for {venue}!", body: "Kick off in {N} min. Your route is ready." }`
-
-**Person B owns this end-to-end.**
+Push notifications via Web Push API + service worker (`public/sw.js`).
 
 ```javascript
-// public/sw.js skeleton — do not modify without telling Person B
+// public/sw.js — do not alter event listener structure
 self.addEventListener('push', (event) => {
   const data = event.data.json();
   self.registration.showNotification(data.title, {
     body: data.body,
     icon: '/icon-192.png',
-    badge: '/badge.png',
     data: { url: data.url }
   });
 });
@@ -300,43 +437,49 @@ self.addEventListener('notificationclick', (event) => {
 });
 ```
 
+Two notification types:
+- **Departure Alert** at `kickoffTime - travelMin - 30min`
+- **Key Moment** on goal/red card events (dispatched from Person C via CustomEvent)
+
 ---
 
 ## 🚦 Integration Checkpoints
 
-Each person exposes ONE integration test before merging:
-
-| Person | Test | Command |
+| Person | Test | Pass criteria |
 |---|---|---|
-| A | Venue list loads + rank API returns scores | `pnpm test:venue` |
-| B | Route plan returns + notification schedules | `pnpm test:route` |
-| C | Live state polls + explain endpoint returns | `pnpm test:live` |
-| D | Concierge replies + RR pipeline executes | `pnpm test:concierge` |
+| A | Venue list + GMI ranking | `aiRankScore` populated, `aiRankReason` is one sentence |
+| B | Route plan + notification fires | Push arrives within 10s of scheduled time (test with 30s delta) |
+| C | Live state polls + explain returns | 3 explanation levels return different text |
+| D | Concierge chat + voice call initiates + transcript appears | Vapi call starts, transcript streams to UI |
 
 ---
 
 ## 🎬 Demo Script (5 min)
 
 ```
-00:00 — Open app, show fan profile (Brazil fan, SF, casual)
-00:30 — "USA vs Brazil" upcoming match → tap → venue finder loads
-01:00 — AI ranks venues, show top pick with reason card
-01:30 — Tap "Get There" → MapKit route appears, departure time set
-02:00 — Enable notification → confirm alert scheduled
-02:30 — Switch to LIVE tab (mock live match in progress)
-03:00 — Key moment fires → plain-English tactical explainer appears
-03:30 — Tap venue concierge → ask "Is it loud there?" → agent responds
-04:00 — Show scoreboard + key moment timeline
-04:30 — Wrap: "One app. Find it. Get there. Follow it live."
+00:00  Home screen — Brazil fan profile loaded
+00:30  Tap "USA vs Brazil" → Venue Finder → "AI ranked these for you on GMI Cloud"
+01:00  Tap top venue → Venue Card → show aiRankReason
+01:20  Tap "Get There" → MapKit route, Claude departure brief
+01:40  Enable notification → "You'll be alerted 60 min before kickoff"
+02:00  Tap "📞 Call & Book" → VoiceCallModal opens, call initiates
+02:15  Live transcript streams — agent introduces itself to venue
+02:45  RSVP confirmed — show confirmation card with party size + ref
+03:00  Switch to LIVE tab → mock match in progress
+03:30  Goal event fires → key moment alert + tactical explainer
+04:00  Toggle Casual → Analyst level — show depth difference
+04:20  "All powered by Gemma 4 running on GMI Cloud H100s"
+04:30  Wrap: Find. Get there. Book your spot. Follow it live.
 ```
 
 ---
 
 ## ⚠️ Rules of Engagement
 
-- **Never break `/api/` contracts.** Mock first, replace second.
-- **Never put API keys in frontend code.** All AI calls go through `/api/` routes.
-- **All types come from `src/lib/types.ts`.** No local type definitions.
+- **ALL AI calls go to GMI Cloud.** No exceptions. No other inference providers.
+- **Vapi custom LLM webhook proxies to GMI** — never call a different model in `/api/voice/llm`.
+- **Never put API keys in frontend code.** All AI + Vapi calls go server-side.
+- **All types from `src/lib/types.ts`.** No local type definitions.
 - **Mobile-first.** Design for 390px width first.
-- **If you're blocked, mock it.** Keep your module shippable.
-- **Commit messages**: `[venue] feat: add ranking UI` / `[route] fix: notification timing`
+- **Mock before you integrate.** Keep your module shippable at all times.
+- **Commit prefix:** `[venue]`, `[route]`, `[live]`, `[voice]`, `[infra]`

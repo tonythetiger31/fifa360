@@ -1,491 +1,539 @@
 # FIFA 360 — Product Requirements Document
-**Version:** 1.0 — Hackathon Build  
-**Date:** May 23, 2026  
-**Team:** 4 Engineers  
-**Event:** GDG Newport Beach × RocketRide × GMI Cloud Hackathon  
-**Stack:** Next.js · RocketRide · GMI Cloud · Anthropic (Claude) · MapKit JS
+**Version:** 2.0 — Updated with GMI/Gemma stack + Voice RSVP Agent
+**Date:** May 23, 2026 | **Team:** 4 Engineers
+**Event:** GDG Newport Beach × RocketRide × GMI Cloud Hackathon
+**Stack:** Next.js · RocketRide · GMI Cloud (Gemma 4) · Vapi · MapKit JS
 
 ---
 
 ## 1. Executive Summary
 
-FIFA 360 is a mobile-first AI matchday companion for the 2026 World Cup. The fan matchday journey is currently fragmented across five or more disconnected tools: Google Maps, Yelp, a sports app, a transit app, and social media. FIFA 360 collapses this into a single **matchday operating system** covering the three phases of every fan's game day: **Find → Get There → Follow**.
+FIFA 360 is a mobile-first AI matchday companion for the 2026 World Cup. The fan matchday journey is fragmented across venue search, transport apps, live score apps, and phone calls to restaurants. FIFA 360 collapses this into a **matchday operating system** covering four phases:
 
-The MVP is scoped for a 6-hour hackathon build and a 3-minute live demo. Every feature decision prioritizes demo clarity and technical novelty over completeness.
+**Find → Get There → Book Your Spot → Follow**
 
----
-
-## 2. Problem Statement
-
-| Fan Job | Current Reality | Pain |
-|---|---|---|
-| Find a venue | Google + Yelp + friend group chat | No context for match atmosphere, team loyalty, real-time crowd |
-| Get there on time | Google Maps doesn't know kickoff time | Fans arrive late, miss kickoff, get stuck in crowds |
-| Follow the match | Second-screen is 3 separate apps | Context switching kills immersion; tactics are opaque |
-
-**The insight:** All three jobs share the same data (match, location, fan preference) but no product has unified them. FIFA 360 is the connective tissue.
+Every AI feature in FIFA 360 runs on **Google's Gemma 4 open model, served on GMI Cloud's NVIDIA H100/H200 GPUs**, orchestrated by **RocketRide** pipelines. This is the cleanest possible sponsor story: one inference stack, three sponsors, zero redundancy.
 
 ---
 
-## 3. Goals
+## 2. The Sponsor Story (Say This in the Demo)
 
-### Primary (Hackathon)
-- Build a working demo that flows naturally through all three phases in under 5 minutes
-- Demonstrate meaningful AI output from Claude + GMI Cloud in the live flow
-- Show RocketRide as the orchestration backbone, not an afterthought
+> *"Every AI response you see — venue rankings, tactical explainers, the voice agent calling this restaurant right now — is Gemma 4, Google's latest open model, running live on GMI Cloud's H100s. RocketRide is the pipeline that wires it all together."*
 
-### Secondary (Post-Hackathon, if continued)
-- Venue selection rate > 60% of sessions
-- Route plan starts > 40% of venue selections
-- Live tab engagement > 3 minutes per session during match windows
-
----
-
-## 4. Success Metrics (Demo Day)
-
-| Signal | Bar |
+| Sponsor | Role in Product |
 |---|---|
-| Demo flows without error | Required |
-| AI output is visibly personalized | Required |
-| All 3 sponsor tools appear in demo | Required |
-| Judge can understand value in 30 seconds | Required |
-| Judges ask follow-up questions | Target |
+| **GMI Cloud** | All inference: Gemma 4 27B (smart), Gemma 4 E2B (fast), BGE embeddings |
+| **Google (Gemma 4)** | The model powering every AI feature including the voice agent brain |
+| **RocketRide** | Pipeline orchestration: venue ranking, departure timing, live match, RSVP confirm |
 
 ---
 
-## 5. Technical Architecture
+## 3. Technical Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│              FIFA 360 — Mobile Web App                  │
-│         Next.js 14 · App Router · Tailwind CSS          │
-│         Mobile-first (390px) · PWA-enabled              │
-└──────────────────┬──────────────────────────────────────┘
-                   │  API Routes (/api/*)
-        ┌──────────┼──────────────┐
-        ▼          ▼              ▼
-┌──────────┐ ┌──────────┐ ┌──────────────┐
-│Anthropic │ │GMI Cloud │ │  MapKit JS   │
-│  Claude  │ │  NVIDIA  │ │  (Apple)     │
-│          │ │  H100s   │ │              │
-│ Sonnet   │ │ Embed +  │ │ Routes +     │
-│ (agents) │ │ Ranking  │ │ Geocoding    │
-│ Haiku    │ │ models   │ │              │
-│ (live)   │ │          │ │              │
-└──────────┘ └──────────┘ └──────────────┘
-        │          │
-        └────┬─────┘
-             ▼
-    ┌─────────────────┐
-    │   RocketRide    │
-    │  Pipeline Layer │
-    │                 │
-    │ venue-ranking   │
-    │ concierge       │
-    │ live-match      │
-    └─────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│           FIFA 360 — Mobile Web App (PWA)                    │
+│        Next.js 14 · Tailwind · App Router · 390px first      │
+└──────────┬───────────────────────────────────────────────────┘
+           │  API Routes (/api/*)
+     ┌─────┴──────────────────────────┐
+     ▼                                ▼
+[ RocketRide ]                   [ Vapi.ai ]
+  Pipeline Runtime               Voice Orchestration
+  venue-ranking.pipe               STT: Deepgram Nova-3
+  departure-timing.pipe            TTS: ElevenLabs Rachel
+  live-explain.pipe                Telephony: Twilio
+  rsvp-confirm.pipe                Custom LLM → /api/voice/llm
+     │                                ↓
+     └──────────────┬─────────────────┘
+                    ▼
+        ┌───────────────────────┐
+        │     GMI Cloud         │
+        │  NVIDIA H100 / H200   │
+        │                       │
+        │ gemma-4-27b-it  ←─── Smart reasoning, conversation,
+        │                       voice agent brain, tactics,
+        │                       narratives, RSVP negotiation
+        │                       
+        │ gemma-4-e2b-it  ←─── Fast: key moments (<500ms),
+        │                       departure briefings
+        │                       
+        │ BAAI/bge-large  ←─── Venue embedding + ranking
+        │ -en-v1.5              
+        └───────────────────────┘
+                    │
+         ┌──────────┴─────────┐
+         ▼                    ▼
+    [ MapKit JS ]      [ Web Push API ]
+      Routes +          Push notifications
+      Geocoding         via service worker
 ```
 
-### Model Routing (Live Demo — Enforced)
+---
 
-| Feature | Model | Provider | Rationale |
+## 4. Model Routing — Complete Map
+
+| Feature | Model | Tier | Approx latency |
 |---|---|---|---|
-| Venue Concierge | `claude-sonnet-4-20250514` | Anthropic | Tool use, multi-turn conversation |
-| Tactical Explainer | `claude-sonnet-4-20250514` | Anthropic | Nuanced reasoning, multi-level output |
-| Key Moment Descriptions | `claude-haiku-4-5-20251001` | Anthropic | <500ms latency for live feel |
-| Departure Timing NL | `claude-haiku-4-5-20251001` | Anthropic | Simple reasoning, fast |
-| Venue Semantic Ranking | `BAAI/bge-large-en-v1.5` | GMI Cloud | Embedding similarity, GPU-accelerated |
-| Fan Preference Summary | `claude-sonnet-4-20250514` | Anthropic | Personalization quality |
-| Match Narrative | `claude-sonnet-4-20250514` | Anthropic | Rich storytelling |
+| Venue Concierge Chat | `gemma-4-27b-it` | Smart | ~1.5s |
+| Tactical Explainer (3 levels) | `gemma-4-27b-it` | Smart | ~1.5s |
+| Match Narrative Generator | `gemma-4-27b-it` | Smart | ~2s |
+| **Voice RSVP Agent Brain** | **`gemma-4-27b-it`** | **Smart** | **~800ms/turn** |
+| Personalized Venue Rank Reason | `gemma-4-27b-it` | Smart | ~1s |
+| Key Moment Descriptions | `gemma-4-e2b-it` | Fast | <400ms |
+| Departure Timing Briefing | `gemma-4-e2b-it` | Fast | <400ms |
+| Venue Semantic Embeddings | `BAAI/bge-large-en-v1.5` | Embed | <200ms |
 
-> ⛔ Gemini / Google AI Studio must NOT appear in the live demo API flow. It is used for development reference only.
+All served via `https://api.gmi-serving.com/v1` — OpenAI-compatible, single client.
 
 ---
 
-## 6. Feature Specifications
+## 5. Feature Specifications
 
 ### Feature Group A — Venue Discovery (Person A)
 
 #### A1. Smart Venue Finder
-- Displays a scrollable list of venues for a selected upcoming match
-- Filters: atmosphere (casual → electric), capacity, price range, max travel time
-- Each venue shows: name, type badge, distance, price range, AI rank score
-- Default sort: AI rank score descending
-- **Model:** GMI Cloud embeddings rank venues by semantic similarity to fan profile → Claude Haiku generates one-line rank reason
+- Scrollable venue list filtered by match, atmosphere, budget, travel time
+- Default sort: `aiRankScore` descending
+- Filter chips: 🍺 Bar · 🍽️ Restaurant · 🏟️ Fan Zone · 💸 Budget · ⚡ Electric
 
 #### A2. Personalized Venue Ranking
-- On page load, `POST /api/venue/rank` is called with fan profile + venue list
-- RocketRide pipeline: `[fan_profile_node] → [embed_node(GMI)] → [rank_node] → [reason_node(Claude Haiku)]`
-- Returns `aiRankScore` (0–1) and `aiRankReason` (1 sentence max)
-- Ranking factors: atmosphere match, budget fit, travel time, team loyalty alignment
-
 **RocketRide Pipeline: `venue-ranking.pipe`**
-```json
-{
-  "nodes": [
-    { "id": "input", "type": "source", "schema": "VenueRankRequest" },
-    { "id": "embed_profile", "type": "llm_embed", "provider": "gmi", "model": "BAAI/bge-large-en-v1.5" },
-    { "id": "embed_venues", "type": "llm_embed", "provider": "gmi", "model": "BAAI/bge-large-en-v1.5" },
-    { "id": "score", "type": "cosine_similarity", "inputs": ["embed_profile", "embed_venues"] },
-    { "id": "reason", "type": "llm", "provider": "anthropic", "model": "claude-haiku-4-5-20251001",
-      "prompt": "In one sentence, explain why this venue matches this fan's profile: {profile} → {venue}" },
-    { "id": "output", "type": "sink", "schema": "RankedVenueList" }
-  ]
-}
+
+```
+[webhook_source] → [embed_profile: GMI/BAAI/bge-large-en-v1.5]
+                → [embed_venues:  GMI/BAAI/bge-large-en-v1.5]
+                → [cosine_rank]
+                → [llm_reason: GMI/gemma-4-27b-it]
+                → [http_sink: /api/venue/rank/callback]
 ```
 
+- `aiRankScore` (0–1) from cosine similarity
+- `aiRankReason` (1 sentence): *"Best Brazil crowd energy in the Mission, big screen confirmed."*
+
 #### A3. Venue Profile Card
-- Full card view on tap: name, address, photo, amenities chips, AI rank reason
-- "Get Directions" CTA → hands off `venueId` to Route module (Person B)
-- "Ask Concierge" CTA → opens concierge chat with venue context pre-loaded (Person D)
-- Rating, price range, atmosphere badge, capacity indicator
+- Full detail: name, address, photo, amenities chips, rank reason, rating, price
+- CTAs: **"Get Directions"** → route module | **"Ask Concierge"** → chat | **"📞 Call & Book"** → voice agent
+- `rsvpAvailable` badge shown when venue accepts voice booking
 
 ---
 
 ### Feature Group B — Transportation & Timing (Person B)
 
 #### B1. Matchday Route Planner
-- Accepts: user current location (browser geolocation), selected venue, selected match
-- Calls MapKit JS Directions API for walking, transit, and driving options
-- Displays: step-by-step route, total duration, departure time recommendation
+- MapKit JS Directions for walk / transit / drive
 - Departure time = `kickoffTime - travelDuration - 30min buffer`
-- Three mode tabs: 🚶 Walk · 🚌 Transit · 🚗 Drive
-- Map view embedded via MapKit JS
+- Map view + step-by-step list
 
 #### B2. Departure Timing Assistant
-- Claude Haiku generates a natural language departure briefing:
-  > *"Leave by 6:15 PM. It's a 22-minute transit ride — the F-Train from Market St drops you right at the venue. Big match, expect crowds near the stadium. Give yourself the extra buffer."*
-- Prompt template (do not alter without updating CLAUDE.md):
-  ```
-  You are a helpful matchday assistant. Generate a friendly 2-3 sentence departure briefing.
-  Match: {homeTeam} vs {awayTeam} at {kickoffTime}
-  Venue: {venueName} ({venueAddress})
-  Route: {mode}, {durationMinutes} minutes
-  Buffer: 30 minutes recommended
-  Keep it conversational, specific, and action-oriented.
-  ```
-- Model: `claude-haiku-4-5-20251001`
+**RocketRide Pipeline: `departure-timing.pipe`**
 
-#### B3. Key Moments Push Notifications
-- User grants notification permission during route plan confirmation
-- Service worker (`public/sw.js`) handles push events
-- Two notification types:
-  - **Departure Alert**: fires at `kickoffTime - travelMinutes - 30min`
-    - Title: `"Time to leave for {venueName}! ⚽"`
-    - Body: `"Kick off in {N} min. Tap for your route."`
-    - Action URL: `/route/{routePlanId}`
-  - **Key Moment Alert**: fires when a goal/red card event is added to LiveMatchState (Person C triggers this)
-    - Title: `"GOAL! {player} scores for {team} ⚽"`
-    - Body: `"{minute}' — {description}"`
-    - Action URL: `/live/{matchId}`
-
-**Notification Scheduling:**
-```typescript
-// POST /api/route-plan/notify
-// Calculates delay in ms, uses setTimeout for hackathon simplicity
-// Production: use a job queue (BullMQ, etc.)
-const delayMs = new Date(departureAlertTime).getTime() - Date.now();
-setTimeout(() => sendPushNotification(subscription, payload), delayMs);
+```
+[webhook_source]
+  → [llm: GMI/gemma-4-e2b-it, prompt: departure_briefing_template]
+  → [http_sink: response]
 ```
 
+Output example: *"Leave by 6:15 PM. F-Train from Market St, 22 min ride — drops you right there. Big match, expect crowds. Give yourself the buffer."*
+
+#### B3. Push Notifications
+- Web Push API + service worker (`public/sw.js`)
+- **Departure Alert**: fires at `kickoffTime - travelMin - 30min`
+  - `"Time to leave for Murphy's! ⚽ Kick off in 52 min."`
+- **Key Moment Alert**: dispatched from Person C via `CustomEvent('key-moment')`
+  - `"GOAL! Vinicius Jr scores for Brazil ⚽ 67' — 2-1"`
+- **RSVP Confirmed Alert**: dispatched from Person D voice module
+  - `"✅ Table booked at Murphy's! Party of 3 confirmed."`
+
 #### B4. Share Plan Link
-- Generates a shareable URL: `/route/share?venue={id}&match={id}&mode={mode}`
-- Contains full route plan encoded as base64 query param
-- Share sheet via native Web Share API (`navigator.share`)
+- Web Share API → `{APP_URL}/route/share?v={venueId}&m={matchId}&mode={mode}`
 
 ---
 
 ### Feature Group C — Live Match Experience (Person C)
 
-#### C1. Live Match Dashboard
-- Polling: `GET /api/live?matchId=` every 10 seconds
-- Displays: live score, match minute, possession bar, match status indicator
-- Pulsing "LIVE" badge when `status === 'live'`
-- Next match countdown when no live match: `"Brazil vs Germany kicks off in 2h 34m"`
+#### C1. Live Dashboard
+- Poll `GET /api/live?matchId=` every 10 seconds
+- Live score, match minute, possession bar, pulsing LIVE badge
 
 #### C2. Key Moment Timeline
-- Vertical event timeline, newest events at top
-- Event types with icons:
-  - ⚽ Goal · 🟨 Yellow · 🟥 Red · 🔄 Sub · 🎬 VAR · 🏁 KO · ⏱ HT · ✅ FT
-- Each event has a Claude-generated `description` (plain English, 1–2 sentences)
-- Events generated by mocking then fed through Claude Haiku for natural language
-- **Generation prompt:**
-  ```
-  Describe this football match event in 1-2 plain English sentences for a casual fan.
-  Be vivid but concise. Event: {type} by {player} for {team} at minute {minute}.
-  Current score: {homeTeam} {homeScore} - {awayScore} {awayTeam}.
-  ```
+**RocketRide Pipeline: `live-explain.pipe`**
+
+```
+[webhook_source: {event, match_context}]
+  → [llm: GMI/gemma-4-e2b-it, prompt: event_description_template]
+  → [http_sink: description]
+```
+
+Prompt template:
+```
+Describe this football event in 1-2 vivid sentences for a casual fan.
+Event: {type} by {player} for {team} at minute {minute}.
+Score: {homeTeam} {homeScore} – {awayScore} {awayTeam}.
+Be specific, exciting, but brief.
+```
 
 #### C3. Plain-English Tactical Explainer
-- Triggered by tapping any key moment, or a "Tactics" floating button
-- Three explanation levels (togglable chip):
-  - **Casual**: "Brazil just switched to defending deep — they're trying to protect the lead."
-  - **Enthusiast**: "Tite shifted to a 4-4-2 low block. The midfield is now sitting in front of the defensive line."
-  - **Analyst**: "Compactness in mid-block phase, forcing France wide. Note the narrow striker positioning to cut passing lanes."
-- Model: `claude-sonnet-4-20250514`
-- **Prompt:**
-  ```
-  You are a football tactical analyst. Explain the following match situation for a {level} audience.
-  Keep it to 2-3 sentences max. Do not use jargon for 'casual'. Use precise terms for 'analyst'.
-  Situation: {tacticalContext}
-  Recent events: {last3Events}
-  ```
+Three levels via toggle chip — all through `gemma-4-27b-it` on GMI:
+
+```
+Casual:      "Brazil just dropped into a defensive shell — they're protecting the lead."
+Enthusiast:  "4-4-2 low block, Tite packing the midfield to cut passing lanes to Kane."
+Analyst:     "Compact mid-block phase, narrow striker pair to deny central progression.
+              France forced wide where Brazil's fullbacks hold positional discipline."
+```
+
+`POST /api/live/explain` body: `{ event, context: LiveMatchState, level: 'casual'|'enthusiast'|'analyst' }`
 
 #### C4. Match Summary (Between Matches)
-- When no live match: show summary of most recent completed match
-- Sections: Final score · Key moments log with timestamps · Claude-generated match narrative (3–4 sentences)
-- Narrative prompt targets emotional storytelling: lead, turning point, hero moment, final result
+- Completed match: score, event log with timestamps, Gemma-generated 3–4 sentence narrative
+- Next match: countdown timer + team context card
 
 ---
 
-### Feature Group D — Orchestration, Profile & Concierge (Person D)
+### Feature Group D — Orchestration, Profile, Concierge & Voice (Person D)
 
-#### D1. Basic Fan Profile
-- Onboarding screen (step 1 of 2 on first launch)
-- Fields: favorite team(s) (multi-select flag grid), watch style, budget, max travel time, notification preference, departure alert timing (default: 60 min before kickoff)
-- Stored in localStorage as `FanProfile` object
-- Exposes `useProfile()` hook — all modules import from here
+#### D1. Fan Profile (Onboarding)
+- Step 1: team selection (flag grid, multi-select, tap to pick up to 3)
+- Step 2: watch style, budget slider (1–3), max travel time, notification toggle, departure alert timing, **name + default party size** (for voice RSVP)
+- Stored in localStorage as `FanProfile`
+- `useProfile()` hook — import everywhere
 
-#### D2. Venue Concierge Agent
-- Chat interface accessible from Venue Profile Card (CTA button)
-- Pre-loads venue context: `"You're asking about {venueName}"`
-- Multi-turn conversation using full message history
-- Claude Sonnet with tool use — available tools:
-  - `get_venue_details(venueId)` → returns full Venue object
-  - `get_route_to_venue(venueId)` → returns RoutePlan
-  - `get_match_info(matchId)` → returns Match object
-- Example interactions:
-  - *"Is it loud there?"* → "Murphy's is known for an electric atmosphere — packed for big matches, standing room only."
-  - *"Can I get there from Caltrain?"* → invokes `get_route_to_venue`, returns transit directions
-  - *"What time should I leave?"* → calculates and responds conversationally
-- Agent system prompt (in `src/api/concierge/route.ts`):
-  ```
-  You are FIFA 360's matchday concierge. You help fans plan their World Cup match day.
-  You have access to venue details, routes, and match information via tools.
-  Be friendly, specific, and helpful. Keep responses under 3 sentences unless the user asks for more.
-  Current fan profile: {fanProfile}
-  Current venue context: {venueId}
-  ```
+#### D2. Venue Concierge Chat
+- Multi-turn chat, `gemma-4-27b-it` on GMI, full message history passed each call
+- Pre-loaded with venue context on open
+- Example: *"Can I get there by BART?"* → Gemma reasons from venue address + route data
 
-#### D3. RocketRide Pipeline Configuration
-- Responsible for all `.pipe` files in `/pipelines/`
-- Three pipelines to build and test:
-  1. `venue-ranking.pipe` — (spec in Feature A2)
-  2. `concierge.pipe` — routes messages through Claude Sonnet with tool use
-  3. `live-match.pipe` — ingests mock event stream, fans out to Haiku for descriptions
-- Exposes RocketRide pipeline execution via `src/lib/rocketride.ts`
-- Validates all three pipelines execute before demo
+#### D3. 📞 Voice RSVP Agent — NEW FEATURE
 
-#### D4. Team-Based Watch Destination Recommendations
-- On home screen: "Watching {team}? Try these spots"
-- Uses fan profile `favoriteTeams` → filters venues by `atmosphere` and pre-tags venues with supported teams
-- AI-generated one-liner: "The best Brazil crowd in the city."
-- Simple rule-based filter + Claude Haiku one-liner per venue
+**User Flow:**
+1. User taps **"📞 Call & Book"** on venue card
+2. `VoiceCallModal` opens — shows venue name, match, party size (from profile)
+3. User confirms → `POST /api/voice/call` fires
+4. Vapi initiates outbound call to `venue.phone`
+5. Modal shows live transcript as call progresses
+6. On RSVP confirmed: confirmation card slides in with details
+
+**Vapi Configuration (run `scripts/setup-vapi-assistant.ts` once at event start):**
+```typescript
+const assistant = await vapi.assistants.create({
+  name: 'FIFA360 Venue Booker',
+  model: {
+    provider: 'custom-llm',
+    url: `${process.env.NEXT_PUBLIC_APP_URL}/api/voice/llm`,
+    model: 'google/gemma-4-27b-it',
+  },
+  voice: {
+    provider: 'elevenlabs',
+    voiceId: 'rachel',          // warm, professional female voice
+  },
+  transcriber: {
+    provider: 'deepgram',
+    model: 'nova-3',
+    language: 'en-US',
+  },
+  silenceTimeoutSeconds: 30,
+  maxDurationSeconds: 180,      // 3-min call max
+  endCallFunctionEnabled: true,
+});
+```
+
+**`/api/voice/llm` — Vapi Custom LLM Webhook:**
+```typescript
+// POST handler — Vapi sends conversation turns here
+// We proxy to GMI, stream back to Vapi
+export async function POST(req: Request) {
+  const body = await req.json();
+  // body.messages contains conversation so far
+  // body.call.metadata contains { venueId, matchId, fanProfile }
+
+  const { venueId, matchId, fanProfile } = body.call.metadata;
+  const venue   = MOCK_VENUES.find(v => v.id === venueId)!;
+  const match   = MOCK_MATCHES.find(m => m.id === matchId)!;
+
+  const system = buildRsvpSystemPrompt(venue, match, fanProfile);
+
+  const stream = await gmi.chat.completions.create({
+    model: SMART_MODEL,
+    messages: [{ role: 'system', content: system }, ...body.messages],
+    stream: true,
+    tools: [confirmRsvpTool, endCallTool],   // Gemma function calling
+  });
+
+  // Stream back as SSE — Vapi reads this and speaks it
+  return streamToResponse(stream);
+}
+```
+
+**Tool: `confirm_rsvp`**
+```typescript
+const confirmRsvpTool = {
+  type: 'function',
+  function: {
+    name: 'confirm_rsvp',
+    description: 'Call when the venue verbally confirms the reservation',
+    parameters: {
+      type: 'object',
+      properties: {
+        confirmed:        { type: 'boolean' },
+        partySize:        { type: 'number' },
+        arrivalTime:      { type: 'string' },
+        confirmationRef:  { type: 'string' },
+        notes:            { type: 'string' },
+      },
+      required: ['confirmed', 'partySize', 'arrivalTime'],
+    },
+  },
+};
+```
+
+When `confirm_rsvp` fires:
+- `POST /api/voice/rsvp` saves `RsvpResult` 
+- Dispatches `CustomEvent('rsvp-confirmed')` → picked up by `VoiceCallModal` + Person B (notification)
+
+**`VoiceCallModal` UI states:**
+```
+idle        → "Call Murphy's Bar to book your spot for Brazil vs USA?"
+initiating  → [spinner] "Connecting..."
+ringing     → "Calling Murphy's Bar... ☎️"
+in-progress → [live transcript scrolling, two-column: Agent | Venue]
+completed   → [green card] "✅ Table confirmed! Party of 3 · 6:30 PM arrival · Ref: #4821"
+failed      → [red card] "Couldn't reach the venue. Try calling directly: 415-555-0142"
+```
+
+#### D4. RocketRide Pipelines (all 4)
+- `venue-ranking.pipe` — (see A2)
+- `departure-timing.pipe` — (see B2)  
+- `live-explain.pipe` — (see C2)
+- `rsvp-confirm.pipe` — triggered on tool call, writes confirmation, triggers push notification
+
+#### D5. Shared Infrastructure (Build Hour 1 — BLOCKS EVERYONE)
+1. `src/lib/types.ts` — all types
+2. `src/lib/mock-data.ts` — 3 matches (1 live, 1 upcoming, 1 finished), 6–8 venues with `phone` + `rsvpAvailable`, 1 demo profile
+3. `src/lib/gmi.ts` — GMI client (see CLAUDE.md)
+4. `src/lib/rocketride.ts` — RocketRide HTTP client
+5. `src/components/NavBar.tsx` — bottom nav (Home · Venues · Live · Profile)
+6. `src/app/layout.tsx` — root layout
+7. `.env.local` — all env vars seeded
+8. `scripts/setup-vapi-assistant.ts` — run once to create the Vapi assistant, log the ID
+
+**Post to team chat immediately when done. Everyone else mocks until this lands.**
 
 ---
 
-## 7. Team Task Assignments
-
-> Each person can build their module completely independently. Integration happens via the shared API contracts in CLAUDE.md. Mock any dependency that isn't yours.
-
----
+## 6. Team Task Assignments
 
 ### 👤 Person A — Venue Discovery
-
-**Owns:** `src/app/venue/`, `src/api/venue/`
+**Owns:** `src/app/venue/` · `src/api/venue/`
 
 **One-Shot Prompt:**
 ```
-Build the FIFA 360 Venue Discovery module as described in the PRD.
-Read CLAUDE.md fully before writing any code.
-Your module: /src/app/venue/ and /src/api/venue/route.ts
-Use mock data from src/lib/mock-data.ts.
-Implement A1 (venue list + filters), A2 (ranking via GMI Cloud embed + Claude Haiku reason), A3 (venue card).
-The ranking pipeline calls GMI Cloud at GMI_BASE_URL with BAAI/bge-large-en-v1.5 for embeddings.
-Claude Haiku generates the aiRankReason.
-All types from src/lib/types.ts. Mobile-first. Tailwind only.
-Expose "Get Directions" button that routes to /route?venueId={id}&matchId={id}.
-Expose "Ask Concierge" button that routes to /venue/{id}/concierge.
+Build the FIFA 360 Venue Discovery module. Read CLAUDE.md fully first.
+Module: /src/app/venue/ and /src/api/venue/route.ts
+Implement:
+  A1 — Venue list with filter chips (atmosphere, price, capacity)
+  A2 — Venue ranking: POST /api/venue/rank calls RocketRide venue-ranking.pipe,
+       which uses GMI BAAI/bge-large-en-v1.5 for embeddings and
+       gemma-4-27b-it for the aiRankReason one-liner.
+       Fallback: call gmi.ts embed() + gmi.ts chat() directly if RR isn't ready.
+  A3 — Venue card with full details + 3 CTAs:
+       "Get Directions" → /route?venueId=&matchId=
+       "Ask Concierge" → /venue/[id]/concierge (text chat)
+       "📞 Call & Book" → dispatch CustomEvent('open-voice-modal', {venueId, matchId})
+         (VoiceCallModal is a global modal Person D owns — just fire the event)
+All types from src/lib/types.ts. All mock data from src/lib/mock-data.ts.
+Mobile-first, Tailwind only. Show rsvpAvailable badge on eligible venues.
 ```
 
-**Completion criteria:**
-- [ ] Venue list renders from mock data
-- [ ] Filter chips update results
-- [ ] Ranking API populates `aiRankScore` and `aiRankReason`
-- [ ] Venue card opens with full details
-- [ ] Both CTAs route correctly
+**Done when:**
+- [ ] Venue list renders, filters work
+- [ ] `aiRankScore` + `aiRankReason` populated on load
+- [ ] Venue card shows all three CTAs
+- [ ] "📞 Call & Book" fires CustomEvent correctly
 
 ---
 
 ### 👤 Person B — Transportation & Notifications
-
-**Owns:** `src/app/route/`, `src/api/route-plan/`, `public/sw.js`, `src/hooks/useNotifications.ts`
+**Owns:** `src/app/route/` · `src/api/route-plan/` · `public/sw.js` · `src/hooks/useNotifications.ts`
 
 **One-Shot Prompt:**
 ```
-Build the FIFA 360 Route Planning and Notification module as described in the PRD.
-Read CLAUDE.md fully before writing any code.
-Your module: /src/app/route/ and /src/api/route-plan/route.ts
-Implement B1 (MapKit JS route planner), B2 (Claude Haiku departure briefing), B3 (Web Push notifications), B4 (share link).
-MapKit JS token is in MAPKIT_JS_TOKEN env var.
-Departure briefing calls claude-haiku-4-5-20251001 via Anthropic API.
-Service worker lives at public/sw.js — skeleton is in CLAUDE.md, do not change the event listener structure.
-Notification scheduling uses setTimeout for hackathon (calculate delayMs from kickoffTime).
-All types from src/lib/types.ts. Accept venueId and matchId as URL params.
-Expose a "Save Plan + Notify Me" button that schedules the push notification.
+Build the FIFA 360 Route Planning and Notification module. Read CLAUDE.md fully first.
+Module: /src/app/route/ and /src/api/route-plan/route.ts
+Implement:
+  B1 — MapKit JS route (MAPKIT_JS_TOKEN from env), 3 mode tabs (walk/transit/drive),
+       map embed + step list. Accept venueId + matchId as URL params.
+  B2 — Departure briefing: POST /api/route-plan calls RocketRide departure-timing.pipe
+       (GMI gemma-4-e2b-it). Fallback: call gmi.ts chat() with FAST_MODEL directly.
+       Show briefing text below the map.
+  B3 — Notifications: request permission on "Save Plan", subscribe, store in localStorage.
+       Schedule departure alert via setTimeout (delayMs from kickoffTime - travel - 30min).
+       Also listen for CustomEvent('key-moment') and CustomEvent('rsvp-confirmed')
+       and fire push for both.
+  B4 — Share: Web Share API with base64-encoded plan URL.
+All types from src/lib/types.ts. Notification payloads per CLAUDE.md spec.
 ```
 
-**Completion criteria:**
-- [ ] Route renders on map with step list
-- [ ] Mode tabs switch correctly
-- [ ] Departure briefing generates from Claude Haiku
-- [ ] Notification permission requested and subscription stored
-- [ ] Departure alert notification fires at correct time (test with short delta)
-- [ ] Share URL generates and opens native share sheet
+**Done when:**
+- [ ] Route renders on map with steps
+- [ ] Mode tabs switch
+- [ ] Departure briefing text shows (Gemma on GMI)
+- [ ] Notification fires within 30s of scheduled time (test with small delta)
+- [ ] RSVP notification fires on `rsvp-confirmed` event
+- [ ] Share URL works
 
 ---
 
 ### 👤 Person C — Live Match Experience
-
-**Owns:** `src/app/live/`, `src/api/live/`, `src/hooks/useLiveMatch.ts`
-
-**One-Shot Prompt:**
-```
-Build the FIFA 360 Live Match Experience module as described in the PRD.
-Read CLAUDE.md fully before writing any code.
-Your module: /src/app/live/ and /src/api/live/route.ts
-Implement C1 (live dashboard with polling), C2 (key moment timeline), C3 (tactical explainer with 3 levels), C4 (match summary for between matches).
-GET /api/live?matchId= polls every 10 seconds and returns LiveMatchState.
-Use mock data to simulate a live match — pre-populate 5-6 events that animate in over time using setInterval.
-Key moment descriptions generated by claude-haiku-4-5-20251001.
-Tactical explainer uses claude-sonnet-4-20250514 with level param.
-POST /api/live/explain takes {event, context, level} and returns {explanation}.
-When a goal event is added, dispatch a CustomEvent('key-moment', {detail: event}) so Person B's notification hook can listen.
-All types from src/lib/types.ts. Mobile-first. Animate event additions.
-```
-
-**Completion criteria:**
-- [ ] Live score + minute updates every 10 seconds
-- [ ] Event timeline populates with icons and Claude descriptions
-- [ ] Tactical explainer returns different text for each level
-- [ ] Next match countdown shows when no live match
-- [ ] Match summary shows for completed match
-- [ ] CustomEvent fires on goal (Person B integration)
-
----
-
-### 👤 Person D — Orchestration, Profile & Concierge
-
-**Owns:** `src/api/concierge/`, `src/api/profile/`, `src/app/profile/`, `pipelines/`, `src/lib/rocketride.ts`, `src/lib/mock-data.ts`, `src/lib/types.ts`
+**Owns:** `src/app/live/` · `src/api/live/` · `src/hooks/useLiveMatch.ts`
 
 **One-Shot Prompt:**
 ```
-Build the FIFA 360 core infrastructure, fan profile, and venue concierge as described in the PRD.
-Read CLAUDE.md fully before writing any code.
-You own: types.ts, mock-data.ts, rocketride.ts, and three RocketRide pipeline files.
-Also own: /src/api/concierge/route.ts, /src/app/profile/ onboarding flow.
-Types.ts: define ALL types from the CLAUDE.md spec — do not add or remove fields.
-mock-data.ts: create 3-4 MOCK_MATCHES (1 live, 1 upcoming, 1 finished), 6-8 MOCK_VENUES in SF, 1 DEMO_PROFILE.
-rocketride.ts: RocketRide client that executes .pipe files via HTTP to localhost:5565.
-Concierge: POST /api/concierge, claude-sonnet-4-20250514 with tool use (3 tools: get_venue_details, get_route_to_venue, get_match_info). Full message history passed each request.
-Profile onboarding: step 1 = team selection (flag grid, multi-select), step 2 = preferences (watch style, budget slider, travel time, notification toggle, alert timing). Store in localStorage.
-Team-based recommendations on home page using profile.favoriteTeams.
-Three RocketRide .pipe files per spec.
+Build the FIFA 360 Live Match Experience. Read CLAUDE.md fully first.
+Module: /src/app/live/ and /src/api/live/route.ts
+Implement:
+  C1 — Live dashboard: poll GET /api/live?matchId= every 10s. Show score, minute,
+       possession bar, pulsing LIVE badge. Countdown when no live match.
+  C2 — Key moment timeline: events with icons (⚽🟨🟥🔄🎬). Each event description
+       generated by gemma-4-e2b-it via GMI (FAST_MODEL). Animate new events in from top.
+       When a goal event is added, dispatch CustomEvent('key-moment', {detail: event}).
+  C3 — Tactical explainer: 3 toggle chips (Casual / Enthusiast / Analyst).
+       POST /api/live/explain → gemma-4-27b-it (SMART_MODEL) via GMI.
+       Button on each event + floating "Tactics" button.
+  C4 — Match summary for finished match: score, event log, Gemma narrative (3-4 sentences).
+       Next match countdown card.
+Simulate live match with setInterval — add events over time (pre-script 6 events including 1 goal).
+All types from src/lib/types.ts.
 ```
 
-**Completion criteria:**
-- [ ] `types.ts` exports all types cleanly — no TypeScript errors
-- [ ] `mock-data.ts` exports all three constants with realistic data
-- [ ] Concierge chat sends/receives messages, tool use works
-- [ ] Profile onboarding saves to localStorage
-- [ ] `useProfile()` hook returns profile from localStorage
-- [ ] All three RocketRide pipelines execute without error
-- [ ] Home screen shows team-based venue recommendations
+**Done when:**
+- [ ] Score + minute update on poll
+- [ ] Events animate in with icons + Gemma descriptions
+- [ ] Tactical explainer returns 3 distinct texts for 3 levels
+- [ ] Match summary renders for finished match
+- [ ] CustomEvent('key-moment') fires on goal
 
 ---
 
-## 8. Home Screen & Navigation (Shared — Person D scaffolds, all contribute)
+### 👤 Person D — Infra, Profile, Concierge & Voice Agent
+**Owns:** `src/lib/*` · `src/api/concierge/` · `src/api/voice/*` · `src/app/profile/` · `pipelines/` · `src/components/VoiceCallModal.tsx` · `scripts/`
 
+**One-Shot Prompt:**
 ```
-┌─────────────────────────┐
-│ ⚽ FIFA 360             │
-│ ─────────────────────── │
-│ NEXT MATCH              │
-│ 🇧🇷 Brazil vs 🇩🇪 Germany│
-│ Today · 7:00 PM         │
-│                         │
-│ YOUR PICKS (team filter)│
-│ [Venue Card Preview]    │
-│ [Venue Card Preview]    │
-│                         │
-│ [Find Venue] [Go Live]  │
-│ ─────────────────────── │
-│ 🏠  🗺️  📺  👤         │
-└─────────────────────────┘
+Build FIFA 360 core infrastructure AND the voice RSVP agent. Read CLAUDE.md fully first.
+This is split into two phases:
+
+PHASE 1 — Do this first, announce to team when done:
+  - src/lib/types.ts: all types from CLAUDE.md spec, no additions or removals
+  - src/lib/mock-data.ts: MOCK_MATCHES (3), MOCK_VENUES (6-8 SF venues with phone numbers
+    and rsvpAvailable: true on at least 3), DEMO_PROFILE (Brazil fan, SF, party of 3)
+  - src/lib/gmi.ts: GMI client exactly as in CLAUDE.md
+  - src/lib/rocketride.ts: HTTP client that POSTs to ROCKETRIDE_SERVER_URL/execute/{pipeline}
+  - src/components/NavBar.tsx: bottom nav 4 tabs
+  - src/app/layout.tsx: root layout with NavBar, listen for CustomEvent('open-voice-modal')
+    and render VoiceCallModal when received
+  - .env.local: all vars from CLAUDE.md seeded (empty values OK for now)
+
+PHASE 2 — Voice Agent:
+  - scripts/setup-vapi-assistant.ts: creates Vapi assistant with custom LLM URL pointing
+    to /api/voice/llm, ElevenLabs TTS, Deepgram STT. Log and save assistant ID to .env.
+  - /api/voice/call/route.ts: receives {venueId, matchId, fanProfile}, calls Vapi API
+    to create outbound call with assistant ID + customer phone from MOCK_VENUES +
+    metadata: {venueId, matchId, fanProfile}. Returns {callId, status}.
+  - /api/voice/llm/route.ts: Vapi custom LLM webhook. Receives Vapi messages array,
+    builds RSVP system prompt from metadata (venue/match/fan), proxies streaming request
+    to GMI gemma-4-27b-it with confirm_rsvp and end_call tools. Streams SSE back to Vapi.
+  - /api/voice/rsvp/route.ts: receives RsvpResult, returns success. Client polls
+    call status and reads rsvpResult from response.
+  - src/components/VoiceCallModal.tsx: modal with 6 states per CLAUDE.md.
+    Shows live transcript. On confirmed: green card with RsvpResult details.
+    On completed: dispatch CustomEvent('rsvp-confirmed', {detail: rsvpResult}).
+  - src/hooks/useVoiceCall.ts: manages call state, polls /api/voice/call?callId=,
+    updates transcript, handles rsvpResult.
+  - 4 RocketRide .pipe files per PRD specs.
+  - Profile onboarding: 2-step form, localStorage persistence, useProfile() hook.
 ```
 
-Bottom nav: Home · Venues · Live · Profile  
-Each tab maps to one module. NavBar component lives in `src/components/NavBar.tsx` — Person D scaffolds it.
+**Done when:**
+- [ ] Phase 1 announced and pushed — no TypeScript errors
+- [ ] Vapi assistant created (`VAPI_ASSISTANT_ID` in .env)
+- [ ] "📞 Call & Book" → modal opens → call initiates (Vapi dashboard shows call)
+- [ ] Transcript streams into modal in real time
+- [ ] RSVP confirmed → confirmation card appears
+- [ ] `rsvp-confirmed` CustomEvent fires (Person B picks this up)
+- [ ] All 4 RocketRide pipelines execute without error
+- [ ] Profile saves and `useProfile()` returns correct data
 
 ---
 
-## 9. Non-Goals (Explicit Scope Cuts)
+## 7. Non-Goals (Explicit Cuts)
 
-- Real-time match data API (use mock with simulated progression)
+- Real match data API (mock with scripted progression)
 - User accounts / backend auth (localStorage only)
-- Actual venue booking or reservation
+- Actual Twilio billing / production phone numbers (Vapi trial number fine for demo)
+- Multilingual voice (English only for demo)
 - Multiple simultaneous live matches
-- Historical match data beyond one completed example
-- Gemini / Google AI Studio in live demo flow
+- Gemini / Google AI Studio in any live call path
 
 ---
 
-## 10. Risk Register
+## 8. Risk Register
 
 | Risk | Likelihood | Mitigation |
 |---|---|---|
-| RocketRide pipeline fails in demo | Medium | Have direct API fallback for all pipeline calls |
-| MapKit JS token expires | Low | Pre-test, have static route fallback |
-| GMI Cloud rate limit | Low | Cache embedding results, have fallback scores |
-| Notification doesn't fire | Medium | Demo with short delta (2 min), show permission grant as proof |
-| AI responses too slow for demo | Medium | Pre-cache 2-3 key Claude responses for demo path |
-| Team integration breaks | Medium | API contract in CLAUDE.md is law — mock everything first |
+| Vapi call doesn't connect in demo | Medium | Pre-test with venue phone number; have transcript screenshot as backup |
+| GMI rate limit on H100s | Low | Free credits provided; cache embedding results |
+| Gemma 4 tool calling not working | Medium | Test `confirm_rsvp` tool call early; fallback to regex parse if needed |
+| RocketRide pipeline fails | Medium | Direct `gmi.ts` fallback for all pipeline features |
+| MapKit JWT expires | Low | Pre-generate token with 24h TTL |
+| Notification doesn't fire | Medium | Demo with 2-min delta; show permission screen as proof point |
+| Voice latency too high | Medium | Use `gemma-4-e2b-it` as fallback fast model for voice if 27B is slow |
 
 ---
 
-## 11. Demo Day Runbook
+## 9. Demo Day Runbook
 
 ```
-T-30min  Seed mock data, verify all 4 modules load
-T-15min  Run full demo flow once end-to-end
-T-10min  Set notification delta to 2 minutes for live demo
-T-5min   Open app on phone + screen share ready
-T-0      Start at Home screen, follow Demo Script in CLAUDE.md
+T-60min  Seed mock data, run setup-vapi-assistant.ts, save VAPI_ASSISTANT_ID
+T-45min  Test full voice call with a real phone number (team member's phone)
+T-30min  Verify all 4 modules load, no console errors
+T-20min  Run complete demo flow once end-to-end
+T-10min  Set notification delta to 2 min, set live match events to animate every 30s
+T-5min   Open app on phone, screen share ready, Vapi dashboard open in background tab
 
-Demo beats that MUST land:
-  1. Personalized venue ranking (say "AI ranked these for you as a Brazil fan")
-  2. Departure time notification scheduling (show the permission + confirm toast)
-  3. Live tactical explainer (switch between Casual and Analyst levels)
-  4. Concierge tool use (ask "Can I get there by train?" — watch it invoke the route tool)
+DEMO BEATS — must land in order:
+  1. Venue finder loads with AI rank scores and reasons (say "Gemma 4 on GMI ranked these")
+  2. Tap venue card — show rsvpAvailable badge
+  3. "Get Directions" → MapKit route appears, departure brief renders
+  4. Notification scheduled — show permission + toast confirmation
+  5. Tap "📞 Call & Book" → modal opens → call ringing
+  6. Live transcript streams — agent introduces itself to venue
+  7. RSVP confirms — green confirmation card with party size
+  8. RSVP push notification fires on Person B's handler
+  9. Switch to LIVE → key moment fires → tactical explainer
+ 10. Toggle Casual → Analyst — show depth difference
+ 11. Close: "Gemma 4. GMI Cloud. RocketRide. One matchday OS."
 ```
 
 ---
 
-## 12. Shared Utilities to Build First (Person D, Hour 1)
+## 10. Shared Utilities — Build Order (Person D, Hour 1)
 
-These must exist before anyone else can run their module:
+```
+Priority 1 (blocks everyone):
+  types.ts · mock-data.ts · gmi.ts · rocketride.ts
 
-1. `src/lib/types.ts` — all types
-2. `src/lib/mock-data.ts` — all mock data
-3. `src/lib/anthropic.ts` — Claude client wrapper
-4. `src/lib/gmi.ts` — GMI Cloud client (OpenAI-compatible)
-5. `src/lib/rocketride.ts` — RocketRide client
-6. `src/components/NavBar.tsx` — bottom nav
-7. `src/app/layout.tsx` — root layout with nav
-8. `.env.local` — all env vars seeded (even if empty)
+Priority 2 (blocks routing):
+  NavBar.tsx · layout.tsx · profile onboarding
 
-Person D announces in team chat when these are pushed. Everyone else waits or mocks locally until this lands.
+Priority 3 (D's own features):
+  setup-vapi-assistant.ts → run it → save ID
+  /api/voice/* routes
+  VoiceCallModal.tsx
+  4 × .pipe files
+```
 
 ---
 
-*PRD Version 1.0 — treat as living document. Update feature notes as you build. All questions → team chat.*
+*PRD v2.0 — Gemma 4 on GMI Cloud · Vapi Voice RSVP · RocketRide Pipelines*
+*All AI inference through GMI. All orchestration through RocketRide. One clean story.*

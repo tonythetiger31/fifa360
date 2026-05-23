@@ -1,4 +1,60 @@
 {
-  "components": [],
-  "project_id": "d8ab09b1-731b-4326-af2d-50dcc30429ba"
+  "components": [
+    {
+      "id": "llm_gmi_cloud_1",
+      "provider": "llm_gmi_cloud",
+      "name": "GMI Cloud",
+      "config": {
+        "profile": "gemini-3-flash",
+        "deepseek-v3": {},
+        "name": "GMI Cloud",
+        "parameters": {
+          "google": {}
+        },
+        "gemini-3-flash": {
+          "apikey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjJiNThhNTQ5LTFkN2ItNGFhNi1hOWFhLTk3MjY2YjhiZGI3OSIsInNjb3BlIjoiaWVfbW9kZWwiLCJjbGllbnRJZCI6IjAwMDAwMDAwLTAwMDAtMDAwMC0wMDAwLTAwMDAwMDAwMDAwMCJ9.T0gxAfUwsVlJM47gQyTnveGRQADhC9CZgZ79Qx5VUW4"
+        }
+      },
+      "ui": {
+        "position": {
+          "x": 760,
+          "y": 280
+        },
+        "nodeType": "default",
+        "formDataValid": true
+      },
+      "input": [
+        {
+          "lane": "questions",
+          "from": "prompt_1"
+        }
+      ]
+    },
+    {
+      "id": "prompt_1",
+      "provider": "prompt",
+      "name": "Prompt",
+      "config": {
+        "instructions": [],
+        "name": "Prompt"
+      },
+      "ui": {
+        "position": {
+          "x": 430,
+          "y": 250
+        },
+        "nodeType": "default",
+        "formDataValid": true
+      }
+    }
+  ],
+  "project_id": "d8ab09b1-731b-4326-af2d-50dcc30429ba",
+  "isLocked": false,
+  "snapToGrid": true,
+  "snapGridSize": [
+    10,
+    10
+  ],
+  "version": 1,
+  "docRevision": 6
 }

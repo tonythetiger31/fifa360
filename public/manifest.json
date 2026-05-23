@@ -1,0 +1,16 @@
+{
+  "name": "FIFA 360 — Matchday Companion",
+  "short_name": "FIFA 360",
+  "description": "Your AI-powered matchday operating system for FIFA 2026",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#030712",
+  "theme_color": "#003DA5",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    }
+  ]
+}

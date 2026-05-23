@@ -1,1 +1,7 @@
 .rocketride/
+node_modules/
+.next/
+.env.local
+.env
+*.pipe.bak
+

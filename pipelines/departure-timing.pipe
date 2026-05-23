@@ -1,0 +1,49 @@
+{
+  "components": [
+    {
+      "id": "chat_1",
+      "provider": "chat",
+      "config": { "hideForm": true, "mode": "Source", "parameters": {}, "type": "chat" },
+      "ui": { "position": { "x": 20, "y": 200 }, "measured": { "width": 150, "height": 66 }, "nodeType": "default", "formDataValid": true }
+    },
+    {
+      "id": "prompt_1",
+      "provider": "prompt",
+      "config": {
+        "instructions": [
+          "You are a departure timing assistant for FIFA 2026 World Cup fans. Given a route plan (travel mode, duration, kickoff time, venue name), write a departure briefing in 2-3 short sentences. Be specific, conversational, and practical. Include: when to leave, how to get there, and one tip for the journey. Keep it under 50 words total. Return ONLY the briefing text — no labels, no JSON."
+        ],
+        "name": "Departure Timing Prompt",
+        "parameters": {}
+      },
+      "input": [{ "lane": "questions", "from": "chat_1" }],
+      "ui": { "position": { "x": 240, "y": 200 }, "measured": { "width": 150, "height": 66 }, "nodeType": "default", "formDataValid": true }
+    },
+    {
+      "id": "llm_gmi_cloud_1",
+      "provider": "llm_gmi_cloud",
+      "config": {
+        "profile": "custom",
+        "custom": {
+          "serverbase": "${ROCKETRIDE_GMI_BASE_URL}",
+          "model": "${ROCKETRIDE_GMI_FAST_MODEL}",
+          "modelTotalTokens": 4096,
+          "apikey": "${ROCKETRIDE_GMI_API_KEY}"
+        },
+        "parameters": {}
+      },
+      "input": [{ "lane": "questions", "from": "prompt_1" }],
+      "ui": { "position": { "x": 460, "y": 200 }, "measured": { "width": 150, "height": 66 }, "nodeType": "default", "formDataValid": true }
+    },
+    {
+      "id": "response_answers_1",
+      "provider": "response_answers",
+      "config": { "laneName": "answers" },
+      "input": [{ "lane": "answers", "from": "llm_gmi_cloud_1" }],
+      "ui": { "position": { "x": 680, "y": 200 }, "measured": { "width": 150, "height": 66 }, "nodeType": "default", "formDataValid": true }
+    }
+  ],
+  "project_id": "ff0c8c61-2e43-434d-8d7a-a1300311049a",
+  "viewport": { "x": 0, "y": 0, "zoom": 1 },
+  "version": 1
+}

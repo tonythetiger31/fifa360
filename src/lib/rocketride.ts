@@ -27,7 +27,7 @@ async function ensurePipeline(pipeFile: string): Promise<string> {
   return result.token;
 }
 
-async function runChat(pipeFile: string, questionText: string, context?: Record<string, unknown>): Promise<string> {
+async function runChatRaw(pipeFile: string, questionText: string, context?: Record<string, unknown>): Promise<string> {
   const client = getClient();
   const token = await ensurePipeline(pipeFile);
 
@@ -38,6 +38,14 @@ async function runChat(pipeFile: string, questionText: string, context?: Record<
   const response = await client.chat({ token, question: q });
   const answers = response?.answers ?? [];
   return answers[0] ?? '';
+}
+
+function timeout(ms: number): Promise<never> {
+  return new Promise((_, reject) => setTimeout(() => reject(new Error('RocketRide timeout')), ms));
+}
+
+async function runChat(pipeFile: string, questionText: string, context?: Record<string, unknown>): Promise<string> {
+  return Promise.race([runChatRaw(pipeFile, questionText, context), timeout(3000)]);
 }
 
 export async function rankVenues(fanProfileJson: string, venuesJson: string): Promise<string> {

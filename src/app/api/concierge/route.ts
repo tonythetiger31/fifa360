@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { MOCK_VENUES, MOCK_MATCHES } from '@/lib/mock-data';
-import { gmi, SMART_MODEL } from '@/lib/gmi';
+import { gmi, FAST_MODEL } from '@/lib/gmi';
 import type { ConciergeMessage } from '@/lib/types';
 
 export async function POST(req: NextRequest) {
@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
   }));
 
   const res = await gmi.chat.completions.create({
-    model: SMART_MODEL,
+    model: FAST_MODEL,
     messages: [{ role: 'system', content: system }, ...apiMessages],
     temperature: 0.7,
     max_tokens: 256,

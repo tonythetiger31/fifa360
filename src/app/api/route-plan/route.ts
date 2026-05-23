@@ -66,20 +66,27 @@ export async function POST(req: NextRequest) {
 
 function buildSteps(mode: string, venueName: string, totalMin: number) {
   if (mode === 'walking') {
+    const leg1 = Math.max(1, Math.round(totalMin * 0.6));
+    const leg2 = Math.max(1, totalMin - leg1);
     return [
-      { instruction: `Walk toward ${venueName}`, durationMinutes: Math.round(totalMin * 0.6), mode: 'walking' },
-      { instruction: `Turn and continue to ${venueName}`, durationMinutes: Math.round(totalMin * 0.4), mode: 'walking' },
+      { instruction: `Walk toward ${venueName}`, durationMinutes: leg1, mode: 'walking' },
+      { instruction: `Continue to ${venueName}`, durationMinutes: leg2, mode: 'walking' },
     ];
   }
   if (mode === 'transit') {
+    const walkEach = Math.min(5, Math.max(1, Math.floor(totalMin * 0.2)));
+    const transitLeg = Math.max(1, totalMin - walkEach * 2);
     return [
-      { instruction: 'Walk to nearest BART/Muni station', durationMinutes: 5, mode: 'walking' },
-      { instruction: `Take transit toward ${venueName} neighborhood`, durationMinutes: Math.round(totalMin - 10), mode: 'transit' },
-      { instruction: `Walk to ${venueName}`, durationMinutes: 5, mode: 'walking' },
+      { instruction: 'Walk to nearest BART/Muni station', durationMinutes: walkEach, mode: 'walking' },
+      { instruction: `Take transit toward ${venueName} neighborhood`, durationMinutes: transitLeg, mode: 'transit' },
+      { instruction: `Walk to ${venueName}`, durationMinutes: walkEach, mode: 'walking' },
     ];
   }
+  // driving
+  const parkWalk = Math.max(2, Math.round(totalMin * 0.15));
+  const drive = Math.max(1, totalMin - parkWalk);
   return [
-    { instruction: `Drive toward ${venueName}`, durationMinutes: Math.round(totalMin * 0.8), mode: 'driving' },
-    { instruction: `Park and walk to ${venueName}`, durationMinutes: Math.round(totalMin * 0.2), mode: 'walking' },
+    { instruction: `Drive toward ${venueName}`, durationMinutes: drive, mode: 'driving' },
+    { instruction: `Park and walk to ${venueName}`, durationMinutes: parkWalk, mode: 'walking' },
   ];
 }

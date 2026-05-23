@@ -34,9 +34,8 @@ Positioned as a **"matchday operating system"** — not a single feature, but th
     ▼                    ▼
 [ GMI Cloud — NVIDIA H100/H200 ]
   ALL inference runs here
-  ├── google/gemma-4-27b-it    (concierge, tactics, narratives, RSVP voice brain)
-  ├── google/gemma-4-e2b-it    (fast: key moments, departure briefs)
-  └── BAAI/bge-large-en-v1.5  (embeddings: venue ranking)
+  ├── google/gemma-4-31b-it       (smart: tactics, narratives, RSVP voice brain, venue ranking)
+  └── google/gemma-4-26b-a4b-it   (fast MoE 4B active: concierge chat, key moments, departure briefs)
               |
     ┌─────────┴──────────┐
     ▼                    ▼
@@ -57,9 +56,9 @@ GMI_API_KEY=                          # from console.gmicloud.ai
 GMI_BASE_URL=https://api.gmi-serving.com/v1
 
 # ─── Model names on GMI ──────────────────────────────────────
-GMI_SMART_MODEL=google/gemma-4-27b-it
-GMI_FAST_MODEL=google/gemma-4-e2b-it
-GMI_EMBED_MODEL=BAAI/bge-large-en-v1.5
+GMI_SMART_MODEL=google/gemma-4-31b-it
+GMI_FAST_MODEL=google/gemma-4-26b-a4b-it
+GMI_EMBED_MODEL=google/gemma-4-26b-a4b-it  # no dedicated embed model on GMI; ranking uses chat
 
 # ─── RocketRide ──────────────────────────────────────────────
 ROCKETRIDE_SERVER_URL=http://localhost:5565
@@ -85,13 +84,13 @@ NEXT_PUBLIC_WS_URL=ws://localhost:3001
 
 | Feature | Model | Why |
 |---|---|---|
-| Venue Concierge Chat | `gemma-4-27b-it` via GMI | Strong reasoning, tool use, multi-turn |
-| Tactical Explainer | `gemma-4-27b-it` via GMI | 256K context, nuanced multi-level output |
-| Match Narrative | `gemma-4-27b-it` via GMI | Rich storytelling, World Cup context |
-| **Voice RSVP Agent** | **`gemma-4-27b-it` via GMI** | **Vapi custom LLM → GMI endpoint** |
-| Key Moment Descriptions | `gemma-4-e2b-it` via GMI | <500ms, live feel |
-| Departure Timing NL | `gemma-4-e2b-it` via GMI | Simple reasoning, fast |
-| Venue Embeddings/Ranking | `BAAI/bge-large-en-v1.5` via GMI | Semantic similarity, GPU-native |
+| Venue Concierge Chat | `gemma-4-26b-a4b-it` (FAST) via GMI | Conversational — latency matters more than depth; ~3-5s |
+| Tactical Explainer | `gemma-4-31b-it` (SMART) via GMI | 3-level depth analysis; 256K context |
+| Match Narrative | `gemma-4-31b-it` (SMART) via GMI | Rich storytelling, World Cup context |
+| **Voice RSVP Agent** | **`gemma-4-31b-it` (SMART) via GMI** | **Vapi custom LLM → GMI endpoint** |
+| Key Moment Descriptions | `gemma-4-26b-a4b-it` (FAST) via GMI | Quick event narration, ~1-2s |
+| Departure Timing NL | `gemma-4-26b-a4b-it` (FAST) via GMI | Simple reasoning, ~3s |
+| Venue Ranking | `gemma-4-31b-it` (SMART) via GMI | Chat-based scoring — no embedding model on GMI |
 
 ---
 
@@ -106,9 +105,9 @@ export const gmi = new OpenAI({
   baseURL: process.env.GMI_BASE_URL!, // https://api.gmi-serving.com/v1
 });
 
-export const SMART_MODEL  = process.env.GMI_SMART_MODEL!; // gemma-4-27b-it
-export const FAST_MODEL   = process.env.GMI_FAST_MODEL!;  // gemma-4-e2b-it
-export const EMBED_MODEL  = process.env.GMI_EMBED_MODEL!; // BAAI/bge-large-en-v1.5
+export const SMART_MODEL  = process.env.GMI_SMART_MODEL!; // gemma-4-31b-it
+export const FAST_MODEL   = process.env.GMI_FAST_MODEL!;  // gemma-4-26b-a4b-it (MoE, 4B active)
+export const EMBED_MODEL  = process.env.GMI_EMBED_MODEL!; // gemma-4-26b-a4b-it (no dedicated embed on GMI)
 
 // Generic chat helper
 export async function chat(
@@ -378,7 +377,7 @@ POST /api/voice/call
         model: {
           provider: "custom-llm",
           url: "{APP_URL}/api/voice/llm",    ← our GMI proxy
-          model: "google/gemma-4-27b-it"
+          model: "google/gemma-4-31b-it"
         },
         voice: { provider: "elevenlabs", voiceId: "rachel" },
         transcriber: { provider: "deepgram", model: "nova-3" }
@@ -388,7 +387,7 @@ POST /api/voice/call
           ▼ Venue picks up
           ▼ Deepgram transcribes venue speech → text
           ▼ POST to /api/voice/llm (our endpoint)
-          ▼ We proxy to GMI: gemma-4-27b-it with RSVP system prompt
+          ▼ We proxy to GMI: gemma-4-31b-it with RSVP system prompt
           ▼ Gemma responds (stream)
           ▼ Vapi converts response → speech via ElevenLabs
           ▼ Vapi speaks to venue
@@ -483,3 +482,33 @@ Two notification types:
 - **Mobile-first.** Design for 390px width first.
 - **Mock before you integrate.** Keep your module shippable at all times.
 - **Commit prefix:** `[venue]`, `[route]`, `[live]`, `[voice]`, `[infra]`
+
+---
+
+## 🐛 Known Issues & Fixes (Session 2 — 2026-05-23)
+
+### GMI model names
+The original PRD used model names that don't exist on GMI Cloud. **Do not use the old names.**
+
+| Old (wrong) | Correct |
+|---|---|
+| `google/gemma-4-27b-it` | `google/gemma-4-31b-it` |
+| `google/gemma-4-e2b-it` | `google/gemma-4-26b-a4b-it` |
+| `BAAI/bge-large-en-v1.5` | N/A — no embedding model on GMI; use chat-based ranking |
+
+To check what models are available: `GET https://api.gmi-serving.com/v1/models` with your `GMI_API_KEY`.
+
+### Concierge uses FAST model (not SMART)
+`/api/concierge/route.ts` uses `FAST_MODEL` (`gemma-4-26b-a4b-it`). This is intentional — the full 31B model was 74s for a conversational UI; the MoE model is ~3-5s. Only tactical/narrative routes use `SMART_MODEL`.
+
+### Route plan transit steps bug (fixed)
+`buildSteps()` in `/api/route-plan/route.ts` used to compute the transit leg as `totalMin - 10`, which produced `durationMinutes: 0` for nearby venues (≤10 min total). Fixed: walk legs are now capped at `min(5, 20% of total)` each, and all legs have `Math.max(1, ...)` guards. Step durations always sum to `travelMinutes`.
+
+### RocketRide fallback latency
+When RocketRide isn't running, the SDK's TCP connection attempt blocks for ~20s before failing. `src/lib/rocketride.ts` wraps every call in a 3-second `Promise.race` timeout so the GMI fallback kicks in immediately. RocketRide pipelines in `pipelines/` are still correct and will be used automatically when the RocketRide server is running.
+
+### next.config format
+`next.config.ts` is not supported by Next.js 14.2.5. The file is `next.config.mjs` (ESM, `export default`).
+
+### useSearchParams requires Suspense
+Any page using `useSearchParams()` must be wrapped in `<Suspense>`. The three affected pages (`/venue`, `/route`, `/venue/[id]`) each export a `<Suspense>`-wrapped shell and extract the real component into an inner `*Content` function.
